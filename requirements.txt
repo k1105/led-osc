@@ -1,0 +1,6 @@
+opencv-python
+opencv-contrib-python
+python-osc
+mediapipe
+tensorflow-macos
+fer
