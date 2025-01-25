@@ -7,24 +7,36 @@ TARGET_IPS = ["192.168.8.100", "192.168.8.101", "192.168.8.102"]  # 使用する
 TARGET_PORT = 8000
 OSC_ADDRESS = "/color"
 
-def extract_colors_from_frame(frame, num_samples=96):
+def extract_colors_from_frame(frame, num_samples=96, positions=("center", "left", "right")):
     """
-    フレームの中央を縦断し、上から順に指定された数だけ色をサンプリング。
+    フレームの指定された位置から色をサンプリング。
     """
     height, width, _ = frame.shape
-    center_x = width // 2  # 中央列
     step = height // num_samples  # 等間隔のステップ
 
-    colors = []
-    for i in range(num_samples):
-        y = min(i * step, height - 1)  # サンプリング位置
-        b, g, r = frame[y, center_x]
-        col = (int(r * 1.0), int(g * 1.0), int(b * 1.2))
-        col = gamma_correction(col)
-        col = clamp_color(col)
+    color_data = {}
+    for pos in positions:
+        if pos == "center":
+            center_x = width // 2
+        elif pos == "left":
+            center_x = width // 4
+        elif pos == "right":
+            center_x = 3 * (width // 4)
+        else:
+            raise ValueError("Invalid position specified. Use 'center', 'left', or 'right'.")
 
-        colors.append(col)  # RGB形式に変換
-    return colors
+        colors = []
+        for i in range(num_samples):
+            y = min(i * step, height - 1)  # サンプリング位置
+            b, g, r = frame[y, center_x]
+            col = (int(r * 1.0), int(g * 1.0), int(b * 1.2))
+            col = gamma_correction(col)
+            col = clamp_color(col)
+            colors.insert(0,col)
+
+        color_data[pos] = colors
+
+    return color_data
 
 def gamma_correction(color, gamma=2.2):
     return tuple(int((c / 255.0) ** gamma * 255) for c in color)
@@ -34,7 +46,7 @@ def clamp_color(col):
 
 def process_and_send(video_path, ips, port, interval=0.022):
     """
-    映像をシーケンシャルに処理し、中央の96色をOSCで送信。
+    映像をシーケンシャルに処理し、指定された位置の色をOSCで送信。
     """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -70,22 +82,22 @@ def process_and_send(video_path, ips, port, interval=0.022):
 
         # 現在のフレームが正しく取得された場合のみ処理
         try:
-            colors = extract_colors_from_frame(frame, num_samples=96)
-            formatted_colors = [0x00000000 | (r << 16) | (g << 8) | b for r, g, b in colors]
+            color_data = extract_colors_from_frame(frame, num_samples=96, positions=("center", "left", "right"))
 
             # OSCで送信
-            for client in clients:
-                try:
-                    client.send_message(OSC_ADDRESS, formatted_colors)
-                    print(f"Sent colors for frame {frame_index}")
-                except ValueError as e:
-                    print(f"Error sending to {client._address}: {e}")
-        except UnboundLocalError:
-            print("フレームの取得に失敗しました。")
+            for i, pos in enumerate(("center", "left", "right")):
+                formatted_colors = [
+                    0x00000000 | (r << 16) | (g << 8) | b for r, g, b in color_data[pos]
+                ]
+                clients[i].send_message(OSC_ADDRESS, formatted_colors)
+                print(f"Sent colors for {pos} to device {TARGET_IPS[i]} (frame {frame_index})")
+
+        except Exception as e:
+            print(f"Error during processing: {e}")
 
         time.sleep(interval)  # 処理間隔
 
 
 if __name__ == "__main__":
-    video_path = "movie/color_tester.mp4"
+    video_path = "movie/videoplayback.mp4"
     process_and_send(video_path, TARGET_IPS, TARGET_PORT)
