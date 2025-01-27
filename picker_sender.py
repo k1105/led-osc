@@ -92,11 +92,18 @@ def process_and_send(video_path, ips, port, interval=0.022):
                 clients[i].send_message(OSC_ADDRESS, formatted_colors)
                 print(f"Sent colors for {pos} to device {TARGET_IPS[i]} (frame {frame_index})")
 
+            # フレームを表示
+            cv2.imshow("Processing Video", frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
         except Exception as e:
             print(f"Error during processing: {e}")
 
         time.sleep(interval)  # 処理間隔
 
+    cap.release()
+    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     video_path = "movie/videoplayback.mp4"
